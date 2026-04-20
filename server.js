@@ -163,6 +163,24 @@ app.get('/api/auth/user', authenticateToken, async (req, res) => {
   }
 });
 
+// Test Email Endpoint
+app.get('/api/test-email', async (req, res) => {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: 'tripathianimesh456@gmail.com',
+      subject: 'Test Email Server',
+      html: '<p>Your Resend integration is officially working! 🎉</p>'
+    });
+    if (error) {
+      return res.status(400).json({ success: false, error });
+    }
+    res.json({ success: true, message: 'Email forcefully sent via Resend API!', data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Update user profile (name & email)
 app.put('/api/auth/user', authenticateToken, async (req, res) => {
   try {
