@@ -81,7 +81,7 @@ const authenticateToken = (req, res, next) => {
 const sendEmail = async (to, subject, html) => {
   try {
     await resend.emails.send({
-      from: 'onboardi@resend.dev',
+      from: 'onboarding@resend.dev',
       to: to,
       subject: subject,
       html: html,
