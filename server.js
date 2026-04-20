@@ -13,6 +13,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Basic health route for cron-job.org pings
+app.get('/', (req, res) => {
+  res.status(200).send('Backend is alive! 🚀');
+});
+
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
