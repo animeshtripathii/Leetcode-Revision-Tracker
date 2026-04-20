@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const cron = require('node-cron');
 require('dotenv').config();
 
@@ -19,14 +19,8 @@ mongoose.connect(process.env.MONGODB_URI, {
   useUnifiedTopology: true,
 });
 
-// Email Transporter Setup
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+// Resend Setup
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Models
 const UserSchema = new mongoose.Schema({
@@ -86,11 +80,11 @@ const authenticateToken = (req, res, next) => {
 // Send Email Function
 const sendEmail = async (to, subject, html) => {
   try {
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to,
-      subject,
-      html,
+    await resend.emails.send({
+      from: 'onboardi@resend.dev',
+      to: to,
+      subject: subject,
+      html: html,
     });
     console.log(`Email sent to ${to}`);
   } catch (error) {
