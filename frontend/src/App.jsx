@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import './App.css';
 
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 // ─── Reusable Pagination Component ───────────────────────────────────────────
 function Pagination({ currentPage, totalPages, onPageChange, totalItems, pageSize }) {
