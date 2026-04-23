@@ -94,12 +94,22 @@ function App() {
 
   // Tasks
   const [tasks, setTasks] = useState([]);
-  const [taskForm, setTaskForm] = useState({ title: '', description: '', date: '', time: '' });
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', date: '', time: '', linkedProblems: [] });
   const [editingTask, setEditingTask] = useState(null);
   const [taskPage, setTaskPage] = useState(1);
   const [taskSearch, setTaskSearch] = useState('');
   const [taskStatus, setTaskStatus] = useState('All'); // All | Pending | Completed
   const TASK_PAGE_SIZE = 10;
+
+  // Revision Lists
+  const [revisionLists, setRevisionLists] = useState([]);
+  const [showRevListForm, setShowRevListForm] = useState(false);
+  const [editingRevList, setEditingRevList] = useState(null);
+  const [revListForm, setRevListForm] = useState({ name: '', reminderDate: '' });
+  const [expandedRevList, setExpandedRevList] = useState(null);
+  const [showRevProbForm, setShowRevProbForm] = useState(false);
+  const [addingToRevListId, setAddingToRevListId] = useState(null);
+  const [revProbForm, setRevProbForm] = useState({ title: '', url: '', difficulty: 'Medium', notes: '', problemRef: '' });
 
   // Profile
   const [profileForm, setProfileForm] = useState({ name: '', email: '' });
@@ -116,6 +126,7 @@ function App() {
     if (user) {
       setProfileForm({ name: user.name, email: user.email });
       fetchMyProblems();
+      fetchRevisionLists();
       if (currentView === 'browse') fetchLCProblems();
       if (currentView === 'tasks') fetchTasks();
     }
@@ -153,6 +164,12 @@ function App() {
     try {
       const res = await axios.get(`${API_URL}/tasks`, { headers: { Authorization: `Bearer ${token}` } });
       setTasks(res.data);
+    } catch (e) { console.error(e); }
+  };
+  const fetchRevisionLists = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/revision-lists`, { headers: { Authorization: `Bearer ${token}` } });
+      setRevisionLists(res.data);
     } catch (e) { console.error(e); }
   };
 
@@ -252,8 +269,42 @@ function App() {
       } else {
         await axios.post(`${API_URL}/tasks`, taskForm, { headers: { Authorization: `Bearer ${token}` } });
       }
-      setTaskForm({ title: '', description: '', date: '', time: '' }); fetchTasks();
+      setTaskForm({ title: '', description: '', date: '', time: '', linkedProblems: [] }); fetchTasks();
     } catch { alert('Error saving task'); }
+  };
+
+  const handleRevListSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingRevList) {
+        await axios.put(`${API_URL}/revision-lists/${editingRevList._id}`, revListForm, { headers: { Authorization: `Bearer ${token}` } });
+        setEditingRevList(null);
+      } else {
+        await axios.post(`${API_URL}/revision-lists`, revListForm, { headers: { Authorization: `Bearer ${token}` } });
+      }
+      setRevListForm({ name: '', reminderDate: '' }); setShowRevListForm(false); fetchRevisionLists();
+    } catch { alert('Error saving revision list'); }
+  };
+
+  const deleteRevList = async (id) => {
+    if (!window.confirm('Delete this revision list?')) return;
+    try { await axios.delete(`${API_URL}/revision-lists/${id}`, { headers: { Authorization: `Bearer ${token}` } }); fetchRevisionLists(); }
+    catch { alert('Error deleting'); }
+  };
+
+  const handleRevProbSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API_URL}/revision-lists/${addingToRevListId}/problems`, revProbForm, { headers: { Authorization: `Bearer ${token}` } });
+      setRevProbForm({ title: '', url: '', difficulty: 'Medium', notes: '', problemRef: '' });
+      setShowRevProbForm(false); setAddingToRevListId(null); fetchRevisionLists();
+    } catch { alert('Error adding problem to list'); }
+  };
+
+  const deleteRevProb = async (listId, probIdx) => {
+    if (!window.confirm('Remove this problem from the list?')) return;
+    try { await axios.delete(`${API_URL}/revision-lists/${listId}/problems/${probIdx}`, { headers: { Authorization: `Bearer ${token}` } }); fetchRevisionLists(); }
+    catch { alert('Error removing problem'); }
   };
 
   const deleteProblem = async (id) => {
@@ -347,6 +398,9 @@ function App() {
           </button>
           <button className={currentView === 'problems' ? 'active' : ''} onClick={() => setCurrentView('problems')}>
             <span className="icon">📊</span> My List ({myProblems.length})
+          </button>
+          <button className={currentView === 'revision-lists' ? 'active' : ''} onClick={() => setCurrentView('revision-lists')}>
+            <span className="icon">📋</span> Revision Lists
           </button>
           <button className={currentView === 'tasks' ? 'active' : ''} onClick={() => setCurrentView('tasks')}>
             <span className="icon">✓</span> Tasks
@@ -627,6 +681,50 @@ function App() {
                     <input type="time" value={taskForm.time}
                       onChange={e => setTaskForm({ ...taskForm, time: e.target.value })} required />
                   </div>
+                  
+                  {/* Link problems section */}
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Link Revision Problems</label>
+                    <select
+                      className="link-problem-select"
+                      style={{ width: '100%', padding: '0.6rem', marginTop: '0.3rem', borderRadius: '8px', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '2px solid transparent' }}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const [listId, probIdx] = e.target.value.split('-');
+                        const list = revisionLists.find(l => l._id === listId);
+                        if (list) {
+                          const prob = list.problems[probIdx];
+                          if (prob && !taskForm.linkedProblems.some(p => p.title === prob.title)) {
+                            setTaskForm({ ...taskForm, linkedProblems: [...(taskForm.linkedProblems || []), { title: prob.title, url: prob.url, difficulty: prob.difficulty }] });
+                          }
+                        }
+                        e.target.value = '';
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>+ Select a problem from Revision Lists...</option>
+                      {revisionLists.map(list => (
+                        <optgroup key={list._id} label={list.name}>
+                          {list.problems.map((p, idx) => (
+                            <option key={`${list._id}-${idx}`} value={`${list._id}-${idx}`}>{p.title} ({p.difficulty})</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    {taskForm.linkedProblems && taskForm.linkedProblems.length > 0 && (
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                        {taskForm.linkedProblems.map((p, idx) => (
+                          <div key={idx} className="problem-chip" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.6rem', background: 'var(--bg-tertiary)', borderRadius: '15px', fontSize: '0.8rem' }}>
+                            <span style={{ color: p.difficulty === 'Easy' ? 'var(--easy-color)' : p.difficulty === 'Medium' ? 'var(--medium-color)' : 'var(--hard-color)' }}>•</span>
+                            {p.title}
+                            <button type="button" style={{ background: 'none', border: 'none', color: 'var(--accent-coral)', cursor: 'pointer', marginLeft: '0.2rem' }}
+                              onClick={() => setTaskForm({ ...taskForm, linkedProblems: taskForm.linkedProblems.filter((_, i) => i !== idx) })}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="button-group">
                     <button type="submit" className="btn-primary">{editingTask ? 'Update' : 'Add'} Task</button>
                     {editingTask && (
@@ -673,15 +771,36 @@ function App() {
                             <td>
                               <strong>{task.title}</strong>
                               {task.description && <p className="task-description">{task.description}</p>}
+                              {task.linkedProblems && task.linkedProblems.length > 0 && (
+                                <div style={{ marginTop: '0.5rem' }}>
+                                  <span style={{ fontSize: '0.75rem', background: 'rgba(78, 236, 163, 0.1)', color: 'var(--accent-teal)', padding: '0.2rem 0.5rem', borderRadius: '12px', cursor: 'pointer' }}
+                                        onClick={(e) => { e.currentTarget.nextElementSibling.style.display = e.currentTarget.nextElementSibling.style.display === 'none' ? 'block' : 'none'; }}>
+                                    📎 {task.linkedProblems.length} problem{task.linkedProblems.length > 1 ? 's' : ''}
+                                  </span>
+                                  <div style={{ display: 'none', marginTop: '0.4rem', paddingLeft: '0.5rem', borderLeft: '2px solid var(--accent-teal)' }}>
+                                    {task.linkedProblems.map((p, i) => (
+                                      <div key={i} style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                        {p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-secondary)', textDecoration: 'underline' }}>{p.title}</a> : p.title} 
+                                        <span style={{ fontSize: '0.7rem', marginLeft: '0.3rem', color: p.difficulty === 'Easy' ? 'var(--easy-color)' : p.difficulty === 'Medium' ? 'var(--medium-color)' : 'var(--hard-color)' }}>({p.difficulty})</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </td>
                             <td>{new Date(task.date).toLocaleDateString()}</td>
                             <td>{task.time}</td>
                             <td><span className={`status ${task.emailSent ? 'sent' : 'pending'}`}>{task.emailSent ? 'Sent' : 'Pending'}</span></td>
                             <td>
                               <div className="action-buttons">
+                                <button className="btn-secondary" style={{ padding: '0.4rem 0.9rem', fontSize: '0.78rem' }} onClick={() => {
+                                  setEditingTask(null);
+                                  setTaskForm({ title: task.title, description: task.description || '', date: '', time: task.time, linkedProblems: task.linkedProblems || [] });
+                                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }} title="Repeat task on a different day">🔁 Repeat</button>
                                 <button className="btn-edit" onClick={() => {
                                   setEditingTask(task);
-                                  setTaskForm({ title: task.title, description: task.description || '', date: new Date(task.date).toISOString().split('T')[0], time: task.time });
+                                  setTaskForm({ title: task.title, description: task.description || '', date: new Date(task.date).toISOString().split('T')[0], time: task.time, linkedProblems: task.linkedProblems || [] });
                                 }}>Edit</button>
                                 <button className="btn-delete" onClick={() => deleteTask(task._id)}>Delete</button>
                               </div>
@@ -705,6 +824,143 @@ function App() {
                   />
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════ REVISION LISTS ══════════ */}
+        {currentView === 'revision-lists' && (
+          <div className="revision-lists-view" style={{ animation: 'fadeIn 0.4s ease' }}>
+            <div className="view-header">
+              <h2>Revision Lists</h2>
+              <button className="btn-primary" onClick={() => setShowRevListForm(!showRevListForm)}>
+                {showRevListForm ? '✕ Close' : '+ New List'}
+              </button>
+            </div>
+            
+            {showRevListForm && (
+              <div className="form-card slide-in" style={{ marginBottom: '2rem' }}>
+                <h3>{editingRevList ? 'Edit Revision List' : 'Create Revision List'}</h3>
+                <form onSubmit={handleRevListSubmit}>
+                  <input type="text" placeholder="List Name (e.g. 'DP Problems', 'Week 1')" value={revListForm.name}
+                    onChange={e => setRevListForm({ ...revListForm, name: e.target.value })} required />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Reminder Date/Time (Defaults to 3 days from now at 9:00 AM)</label>
+                    <input type="datetime-local" value={revListForm.reminderDate}
+                      onChange={e => setRevListForm({ ...revListForm, reminderDate: e.target.value })} />
+                  </div>
+                  <div className="button-group">
+                    <button type="submit" className="btn-primary">{editingRevList ? 'Update' : 'Create'} List</button>
+                    {editingRevList && (
+                      <button type="button" className="btn-secondary" onClick={() => {
+                        setEditingRevList(null);
+                        setRevListForm({ name: '', reminderDate: '' });
+                      }}>Cancel</button>
+                    )}
+                  </div>
+                </form>
+              </div>
+            )}
+
+            {/* Modal for adding a problem to a revision list */}
+            {showRevProbForm && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+                <div className="form-card slide-in" style={{ width: '100%', maxWidth: '500px', margin: 0 }}>
+                  <h3>Add Problem to List</h3>
+                  <form onSubmit={handleRevProbSubmit}>
+                    <div style={{ marginBottom: '1rem' }}>
+                      <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>Pick from My Problems</label>
+                      <select style={{ width: '100%', padding: '0.875rem', background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '2px solid transparent', borderRadius: '10px' }}
+                        onChange={e => {
+                          if (!e.target.value) return;
+                          const p = myProblems.find(x => x._id === e.target.value);
+                          if (p) setRevProbForm({ ...revProbForm, title: p.title, url: p.url, difficulty: p.difficulty, problemRef: p._id });
+                        }}
+                        defaultValue=""
+                      >
+                        <option value="" disabled>Select a problem...</option>
+                        {myProblems.map(p => <option key={p._id} value={p._id}>{p.title} ({p.difficulty})</option>)}
+                      </select>
+                    </div>
+                    <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>— OR enter manually —</div>
+                    <input type="text" placeholder="Problem Title" value={revProbForm.title}
+                      onChange={e => setRevProbForm({ ...revProbForm, title: e.target.value })} required />
+                    <input type="url" placeholder="Problem URL (optional)" value={revProbForm.url}
+                      onChange={e => setRevProbForm({ ...revProbForm, url: e.target.value })} />
+                    <select value={revProbForm.difficulty} onChange={e => setRevProbForm({ ...revProbForm, difficulty: e.target.value })}>
+                      <option>Easy</option><option>Medium</option><option>Hard</option>
+                    </select>
+                    <textarea placeholder="Notes (optional)" value={revProbForm.notes} rows="2"
+                      onChange={e => setRevProbForm({ ...revProbForm, notes: e.target.value })} />
+                    <div className="button-group">
+                      <button type="submit" className="btn-primary">Add Problem</button>
+                      <button type="button" className="btn-secondary" onClick={() => { setShowRevProbForm(false); setAddingToRevListId(null); setRevProbForm({ title: '', url: '', difficulty: 'Medium', notes: '', problemRef: '' }); }}>Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {revisionLists.length === 0 ? (
+                <div className="empty-state" style={{ background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--border-color)' }}>
+                  <p>You haven't created any revision lists yet.</p>
+                  <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>Create a list to group problems and get email reminders!</p>
+                </div>
+              ) : (
+                revisionLists.map(list => (
+                  <div key={list._id} className="table-card" style={{ padding: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                      <div>
+                        <h3 style={{ padding: 0, margin: '0 0 0.5rem 0', color: 'var(--accent-purple)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          📁 {list.name}
+                        </h3>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '1rem' }}>
+                          <span><strong>Reminder:</strong> {new Date(list.reminderDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                          <span className={`status ${list.emailSent ? 'sent' : 'pending'}`}>{list.emailSent ? 'Email Sent' : 'Pending Email'}</span>
+                          <span><strong>Problems:</strong> {list.problems.length}</span>
+                        </div>
+                      </div>
+                      <div className="action-buttons">
+                        <button className="btn-secondary" style={{ padding: '0.4rem 0.9rem', fontSize: '0.78rem' }} onClick={() => {
+                          setAddingToRevListId(list._id); setShowRevProbForm(true);
+                        }}>+ Add Problem</button>
+                        <button className="btn-edit" onClick={() => {
+                          setEditingRevList(list);
+                          setRevListForm({ name: list.name, reminderDate: new Date(list.reminderDate).toISOString().slice(0, 16) });
+                          setShowRevListForm(true);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}>Edit</button>
+                        <button className="btn-delete" onClick={() => deleteRevList(list._id)}>Delete</button>
+                      </div>
+                    </div>
+                    
+                    {list.problems.length > 0 && (
+                      <div style={{ marginTop: '1.5rem' }}>
+                        <button style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem', marginBottom: '0.5rem' }}
+                                onClick={() => setExpandedRevList(expandedRevList === list._id ? null : list._id)}>
+                          {expandedRevList === list._id ? '▼ Hide Problems' : '▶ Show Problems'}
+                        </button>
+                        
+                        {expandedRevList === list._id && (
+                          <div style={{ background: 'var(--bg-secondary)', borderRadius: '12px', padding: '1rem', marginTop: '0.5rem' }}>
+                            {list.problems.map((p, idx) => (
+                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.7rem 0', borderBottom: idx < list.problems.length - 1 ? '1px solid var(--border-color)' : 'none' }}>
+                                <div>
+                                  {p.url ? <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-primary)', fontWeight: '600', textDecoration: 'none' }}>{p.title}</a> : <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{p.title}</span>}
+                                  <span style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '6px', marginLeft: '0.5rem', background: p.difficulty === 'Easy' ? 'rgba(78,236,163,0.1)' : p.difficulty === 'Medium' ? 'rgba(255,217,61,0.1)' : 'rgba(255,107,107,0.1)', color: p.difficulty === 'Easy' ? 'var(--easy-color)' : p.difficulty === 'Medium' ? 'var(--medium-color)' : 'var(--hard-color)' }}>{p.difficulty}</span>
+                                  {p.notes && <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>{p.notes}</p>}
+                                </div>
+                                <button style={{ background: 'none', border: 'none', color: 'var(--accent-coral)', cursor: 'pointer', padding: '0.3rem', borderRadius: '4px' }} onClick={() => deleteRevProb(list._id, idx)} title="Remove problem">✕</button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
